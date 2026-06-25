@@ -10,32 +10,11 @@ import {
 } from "lucide-react";
 import { getMessages, sendMessage } from "../Api/messageService";
 import * as signalR from "@microsoft/signalr";
-
+import { useChat } from "../hooks/useChat";
 const ChatWindow = ({ activeChat }) => {
-  const [messages, setMessages] = useState([]);
-  const [messageText, setMessageText] = useState("");
-  const [loadingMessages, setLoadingMessages] = useState(false);
-  const [isPartnerTyping, setIsPartnerTyping] = useState(false);
-
-  const connectionRef = useRef(null);
-  const messagesEndRef = useRef(null);
-  const typingTimeoutRef= useRef(null);
-
-  // دالة مساعدة لفك تشفير الـ Token واستخراج الـ User ID الحالي بخصائص آمنة
-  const getMyUserId = () => {
-    try {
-      const token = localStorage.getItem("token");
-      if (!token) return null;
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const payload = JSON.parse(window.atob(base64));
-      return payload.nameid || payload.UserId || payload.id;
-    } catch (e) {
-      console.error("Error parsing token:", e);
-      return null;
-    }
-  };
-// استبدل الـ useEffect الخاص بالنزول التلقائي بهذا الكود الذكي:
+const { messages, setMessages, loadingMessages, isPartnerTyping, connectionRef, typingTimeoutRef } = useChat(activeChat);
+    const [messageText, setMessageText] = useState("");
+    const messagesEndRef = useRef(null);
 
 useEffect(() => {
   const chatContainer = messagesEndRef.current?.parentElement;
@@ -50,138 +29,10 @@ useEffect(() => {
   }
 }, [messages, isPartnerTyping]);// 👈 يراقب مصفوفة الرسائل باستمرار
   // 1. جلب تاريخ الرسائل الفعلي وتوحيد بنية البيانات فوراً
-  useEffect(() => {
-    const fetchChatMessages = async () => {
-      if (!activeChat) return;
-
-      try {
-        setLoadingMessages(true);
-        setIsPartnerTyping(false);
-        const data = await getMessages({
-          conversationId: activeChat.id,
-          cursor: null,
-          limit: 30,
-        });
-
-        let rawMessages = [];
-        if (data && Array.isArray(data)) rawMessages = data;
-        else if (data && data.messages && Array.isArray(data.messages)) rawMessages = data.messages;
-        else if (data && data.data && Array.isArray(data.data)) rawMessages = data.data;
-
-        const myId = getMyUserId();
-
-        // تحويل كل الرسائل التاريخية إلى بنية موحدة ومضمونة بنسبة 100%
-        const normalizedMessages = rawMessages.map((msg) => {
-          const serverIsMine = msg.isMine !== undefined ? msg.isMine : msg.IsMine;
-          const isMine = serverIsMine !== undefined ? serverIsMine : (myId && String(msg.senderId || msg.SenderId) === String(myId));
-          
-          return {
-            id: msg.id || msg.Id,
-            text: msg.messageText || msg.text || msg.content || msg.Content || "",
-            isMine: !!isMine,
-createdAt: new Date(new Date(msg.createdAt || msg.CreatedAt || new Date()).getTime() + 3 * 60 * 60 * 1000).toISOString(),
-            status: msg.status || msg.Status || "Delivered"
-          };
-        });
-
-        setMessages(normalizedMessages);
-      } catch (error) {
-        console.error("Failed to fetch messages:", error);
-        setMessages([]);
-      } finally {
-        setLoadingMessages(false);
-      }
-    };
-
-    fetchChatMessages();
-  }, [activeChat]);
+  
 
   // 2. إدارة دورة حياة اتصال الـ SignalR واستقبال البث الحي
-  useEffect(() => {
-    if (!activeChat) return;
-
-    const connection = new signalR.HubConnectionBuilder()
-      .withUrl("https://localhost:7143/chathub", {
-        accessTokenFactory: () => localStorage.getItem("token"),
-      })
-      .withAutomaticReconnect()
-      .build();
-
-    connectionRef.current = connection;
-
-    connection
-      .start()
-      .then(() => {
-        console.log("Connected to SignalR hub successfully");
-        if (connection.state === signalR.HubConnectionState.Connected) {
-          connection.invoke("JoinConversation", activeChat.id)
-            .catch(err => console.error("JoinConversation Error:", err));
-        }
-      })
-      .catch((err) => console.error("SignalR Connection Error:", err));
-// استبدل دالة handleIncomingMessage الحالية بهذا التعديل فقط:
-
-const handleIncomingMessage = (incomingMessage) => {
-  setMessages((prev) => {
-    const incomingText = (incomingMessage.messageText || incomingMessage.text || incomingMessage.content || "").trim();
-    const incomingId = incomingMessage.id || incomingMessage.Id;
-    const myId = getMyUserId();
-    const incomingSenderId = incomingMessage.senderId || incomingMessage.SenderId;
-    const isMessageMine = String(incomingSenderId) === String(myId);
-
-    // 1. إذا كانت الرسالة مني، نحاول تحديث الرسالة المؤقتة (Sent) بدلاً من الإضافة
-    if (isMessageMine) {
-      const localIndex = prev.findIndex(
-        (m) => m.isMine === true && m.status === "Sent" && m.text.trim() === incomingText
-      );
-
-      if (localIndex !== -1) {
-        // تحديث الرسالة الموجودة بالـ ID الجديد والحالة Delivered
-        return prev.map((m, index) =>
-          index === localIndex
-            ? { ...m, id: incomingId, status: "Delivered", createdAt: incomingMessage.createdAt || m.createdAt }
-            : m
-        );
-      }
-    }
-
-    // 2. إذا كانت الرسالة موجودة مسبقاً (منع تكرار لأي سبب)، لا تفعل شيئاً
-    if (prev.some((m) => String(m.id) === String(incomingId))) {
-      return prev;
-    }
-
-    // 3. إضافة الرسالة الجديدة (سواء من الطرف الآخر أو رسالة مني لم أجد لها مثيل مؤقت)
-    return [...prev, {
-      id: incomingId,
-      text: incomingText,
-      isMine: !!isMessageMine,
-      createdAt: incomingMessage.createdAt || incomingMessage.CreatedAt || new Date().toISOString(),
-      status: "Delivered"
-    }];
-  });
-};
-   const handleTypingStatus=(connectionId,isTyping)=>{setIsPartnerTyping(isTyping)}
-
-    connection.on("ReceiveMessage", handleIncomingMessage);
-    connection.on("ReceiveTypingStatus", handleTypingStatus);
-
-    return () => {
-      if (connection) {
-        connection.off("ReceiveMessage", handleIncomingMessage);
-        connection.off("ReceiveTypingStatus", handleTypingStatus);
-
-        if (connection.state === signalR.HubConnectionState.Connected) {
-          connection
-            .invoke("LeaveConversation", activeChat.id)
-            .then(() => connection.stop())
-            .catch(err => console.log("Stop connection deferred:", err));
-        } else {
-          connection.stop();
-        }
-      }
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    };
-  }, [activeChat]);
+ 
 
 const handleInputChange = (e) => {
     setMessageText(e.target.value);

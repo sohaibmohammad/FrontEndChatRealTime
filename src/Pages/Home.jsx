@@ -17,9 +17,7 @@ const Home = () => {
         if (data && data.length > 0) {
           setChats(data);
           // نحدد أول محادثة تلقائياً فقط على شاشات الديسكتوب
-          if (window.innerWidth >= 768) {
-            setActiveChat(data[0]);
-          }
+         
         }
       } catch (error) {
         console.error("Failed to load chats:", error);

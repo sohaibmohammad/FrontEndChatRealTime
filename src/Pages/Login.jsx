@@ -111,7 +111,7 @@ const {name, value}=e.target;
           {/* زر تسجيل الدخول المباشر */}
           <button
             type="submit"
-            className="w-full mt-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 px-4 rounded-xl shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 group transition-all duration-200 active:scale-[0.98]"
+            className={`w-full mt-2 ${loading ? 'bg-emerald-100' : 'bg-emerald-500'} hover:bg-emerald-400 text-slate-950 font-bold py-3 px-4 rounded-xl shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 group transition-all duration-200 active:scale-[0.98]`}
           >
             Launch Messenger
             <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform duration-200" />

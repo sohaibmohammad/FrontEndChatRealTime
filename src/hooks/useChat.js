@@ -87,16 +87,30 @@ export const useChat = (activeChat) => {
             });
         };
 
-        const handleTypingStatus = (_, isTyping) => setIsPartnerTyping(isTyping);
+const handleTypingStatus = (userId, isTyping) => {
+    // الحصول على المعرف الخاص بك
+    const myId = getMyUserId();
+    
+    // المقارنة: إذا كان الـ userId القادم من السيرفر هو نفس الـ id الخاص بك، تجاهل الإشارة
+    if (String(userId) !== String(myId)) {
+        setIsPartnerTyping(isTyping);
+    }
+};        
+        // التعديل الجديد: معالجة حذف الرسالة
+        const handleMessageDeleted = (messageId) => {
+            setMessages((prev) => prev.filter((msg) => String(msg.id) !== String(messageId)));
+        };
 
         connection.on("ReceiveMessage", handleIncomingMessage);
         connection.on("ReceiveTypingStatus", handleTypingStatus);
+        connection.on("MessageDeleted", handleMessageDeleted); // تسجيل المستمع الجديد
 
         connection.start().then(() => connection.invoke("JoinConversation", activeChat.id));
 
         return () => {
             connection.off("ReceiveMessage", handleIncomingMessage);
             connection.off("ReceiveTypingStatus", handleTypingStatus);
+            connection.off("MessageDeleted", handleMessageDeleted); // إلغاء التسجيل عند التنظيف
             connection.stop();
             if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
         };
